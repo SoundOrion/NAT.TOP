@@ -13,7 +13,11 @@ namespace NatsTopCSharp
 {
     class Program
     {
-        // エントリポイント
+        /// <summary>
+        /// エントリポイント
+        /// </summary>
+        /// <param name="args"></param>
+        /// <returns></returns>
         static async Task Main(string[] args)
         {
             // コマンドライン引数をパース
@@ -125,7 +129,12 @@ namespace NatsTopCSharp
 
         #region 出力文字列生成
 
-        // プレーンテキスト版の統計情報表示（元 Golang の generateParagraphPlainText 相当）
+        /// <summary>
+        /// プレーンテキスト版の統計情報表示（元 Golang の generateParagraphPlainText 相当）
+        /// </summary>
+        /// <param name="engine"></param>
+        /// <param name="stats"></param>
+        /// <returns></returns>
         static string GenerateParagraphPlainText(Engine engine, Stats stats)
         {
             Varz varz = stats.Varz;
@@ -217,7 +226,13 @@ namespace NatsTopCSharp
             return info;
         }
 
-        // CSV 出力版（出力区切り文字を指定する場合）
+        /// <summary>
+        /// CSV 出力版（出力区切り文字を指定する場合）
+        /// </summary>
+        /// <param name="engine"></param>
+        /// <param name="stats"></param>
+        /// <param name="delimiter"></param>
+        /// <returns></returns>
         static string GenerateParagraphCSV(Engine engine, Stats stats, string delimiter)
         {
             Varz varz = stats.Varz;
@@ -283,7 +298,9 @@ namespace NatsTopCSharp
             return info;
         }
 
-        // DNS ルックアップ（結果はキャッシュする）
+        /// <summary>
+        /// DNS ルックアップ（結果はキャッシュする）
+        /// </summary>
         static Dictionary<string, string> dnsCache = new();
         static string DNSLookup(string ip)
         {
@@ -303,7 +320,12 @@ namespace NatsTopCSharp
             }
         }
 
-        // バイトサイズを人間に読みやすい文字列に変換
+        /// <summary>
+        /// バイトサイズを人間に読みやすい文字列に変換
+        /// </summary>
+        /// <param name="displayRawValue"></param>
+        /// <param name="s"></param>
+        /// <returns></returns>
         static string Psize(bool displayRawValue, long s)
         {
             double size = s;
@@ -320,7 +342,12 @@ namespace NatsTopCSharp
             return $"{size / gibibyte:0.0}G";
         }
 
-        // 数値を読みやすい形式に変換（K, M, B, T 単位）
+        /// <summary>
+        /// 数値を読みやすい形式に変換（K, M, B, T 単位）
+        /// </summary>
+        /// <param name="displayRawValue"></param>
+        /// <param name="s"></param>
+        /// <returns></returns>
         static string Nsize(bool displayRawValue, long s)
         {
             double size = s;
@@ -340,6 +367,11 @@ namespace NatsTopCSharp
             return $"{size / t:0.0}T";
         }
 
+        /// <summary>
+        /// 日付フォーマットを変換
+        /// </summary>
+        /// <param name="isoDateTime"></param>
+        /// <returns></returns>
         static string FormatDateTime(string isoDateTime)
         {
             try
@@ -365,7 +397,9 @@ namespace NatsTopCSharp
 
     #region オプションと Engine クラス
 
-    // コマンドラインオプション
+    /// <summary>
+    /// コマンドラインオプション
+    /// </summary>
     class Options
     {
         public string Host { get; set; } = "127.0.0.1";
@@ -466,7 +500,9 @@ namespace NatsTopCSharp
         }
     }
 
-    // NATS サーバーから統計情報を取得・計算するエンジンクラス
+    /// <summary>
+    /// NATS サーバーから統計情報を取得・計算するエンジンクラス
+    /// </summary>
     class Engine
     {
         public string Host { get; set; }
@@ -636,7 +672,9 @@ namespace NatsTopCSharp
 
     #region データクラス
 
-    // /varz エンドポイントの情報
+    /// <summary>
+    /// varz エンドポイントの情報
+    /// </summary>
     public class Varz
     {
         [JsonPropertyName("cpu")]
@@ -676,7 +714,9 @@ namespace NatsTopCSharp
         public DateTime Now { get; set; }
     }
 
-    // /connz エンドポイントの情報
+    /// <summary>
+    /// connz エンドポイントの情報
+    /// </summary>
     public class Connz
     {
         [JsonPropertyName("num_connections")]
@@ -686,7 +726,9 @@ namespace NatsTopCSharp
         public List<ConnInfo> Conns { get; set; } = new List<ConnInfo>();
     }
 
-    // 各接続の情報
+    /// <summary>
+    /// 各接続の情報
+    /// </summary>
     public class ConnInfo
     {
         [JsonPropertyName("cid")]
@@ -735,7 +777,9 @@ namespace NatsTopCSharp
         public List<string> Subs { get; set; }
     }
 
-    // 統計情報全体
+    /// <summary>
+    /// 統計情報全体
+    /// </summary>
     public class Stats
     {
         [JsonPropertyName("varz")]
@@ -751,7 +795,9 @@ namespace NatsTopCSharp
         public string Error { get; set; } = "";
     }
 
-    // 全体のレート情報
+    /// <summary>
+    /// 全体のレート情報
+    /// </summary>
     public class Rates
     {
         [JsonPropertyName("in_msgs_rate")]
@@ -770,7 +816,9 @@ namespace NatsTopCSharp
         public Dictionary<ulong, ConnRates> Connections { get; set; } = new Dictionary<ulong, ConnRates>();
     }
 
-    // 各接続ごとのレート情報
+    /// <summary>
+    /// 各接続ごとのレート情報
+    /// </summary>
     public class ConnRates
     {
         [JsonPropertyName("in_msgs_rate")]
