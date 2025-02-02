@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text;
 using System.Text.Json;
 using System.IO;
 using System.Net;
@@ -16,8 +17,6 @@ namespace NatsTopCSharp
         /// <summary>
         /// エントリポイント
         /// </summary>
-        /// <param name="args"></param>
-        /// <returns></returns>
         static async Task Main(string[] args)
         {
             // コマンドライン引数をパース
@@ -75,7 +74,7 @@ namespace NatsTopCSharp
             }
 
             // 統計情報の監視開始（バックグラウンドタスク）
-            CancellationTokenSource cts = new();
+            using CancellationTokenSource cts = new();
             Task monitoringTask = engine.MonitorStats(cts.Token);
 
             // カーソルを非表示にする
@@ -136,26 +135,23 @@ namespace NatsTopCSharp
         /// <summary>
         /// プレーンテキスト版の統計情報表示（元 Golang の generateParagraphPlainText 相当）
         /// </summary>
-        /// <param name="engine"></param>
-        /// <param name="stats"></param>
-        /// <returns></returns>
         static string GenerateParagraphPlainText(Engine engine, Stats stats)
         {
             Varz varz = stats.Varz;
-            // レートは前回との差分から計算済みの値
             double inMsgsRate = stats.Rates?.InMsgsRate ?? 0;
             double outMsgsRate = stats.Rates?.OutMsgsRate ?? 0;
             string inBytesRate = Psize(engine.DisplayRawBytes, (long)(stats.Rates?.InBytesRate ?? 0));
             string outBytesRate = Psize(engine.DisplayRawBytes, (long)(stats.Rates?.OutBytesRate ?? 0));
 
-            string info =
-                $"NATS server version {varz.Version} (uptime: {varz.Uptime}) {stats.Error}{Environment.NewLine}" +
-                $"Server: {varz.Name}{Environment.NewLine}" +
-                $"  ID:   {varz.ID}{Environment.NewLine}" +
-                $"  Load: CPU:  {varz.CPU:F1}%  Memory: {Psize(false, varz.Mem)}  Slow Consumers: {varz.SlowConsumers}{Environment.NewLine}" +
-                $"  In:   Msgs: {Nsize(engine.DisplayRawBytes, varz.InMsgs)}  Bytes: {Psize(engine.DisplayRawBytes, varz.InBytes)}  Msgs/Sec: {inMsgsRate:F1}  Bytes/Sec: {inBytesRate}{Environment.NewLine}" +
-                $"  Out:  Msgs: {Nsize(engine.DisplayRawBytes, varz.OutMsgs)}  Bytes: {Psize(engine.DisplayRawBytes, varz.OutBytes)}  Msgs/Sec: {outMsgsRate:F1}  Bytes/Sec: {outBytesRate}{Environment.NewLine}{Environment.NewLine}" +
-                $"Connections Polled: {stats.Connz.NumConns}{Environment.NewLine}";
+            var sb = new StringBuilder();
+            sb.AppendLine($"NATS server version {varz.Version} (uptime: {varz.Uptime}) {stats.Error}");
+            sb.AppendLine($"Server: {varz.Name}");
+            sb.AppendLine($"  ID:   {varz.ID}");
+            sb.AppendLine($"  Load: CPU:  {varz.CPU:F1}%  Memory: {Psize(false, varz.Mem)}  Slow Consumers: {varz.SlowConsumers}");
+            sb.AppendLine($"  In:   Msgs: {Nsize(engine.DisplayRawBytes, varz.InMsgs)}  Bytes: {Psize(engine.DisplayRawBytes, varz.InBytes)}  Msgs/Sec: {inMsgsRate:F1}  Bytes/Sec: {inBytesRate}");
+            sb.AppendLine($"  Out:  Msgs: {Nsize(engine.DisplayRawBytes, varz.OutMsgs)}  Bytes: {Psize(engine.DisplayRawBytes, varz.OutBytes)}  Msgs/Sec: {outMsgsRate:F1}  Bytes/Sec: {outBytesRate}");
+            sb.AppendLine();
+            sb.AppendLine($"Connections Polled: {stats.Connz.NumConns}");
 
             // 各列の幅を決定
             int hostSize = 15;
@@ -174,38 +170,35 @@ namespace NatsTopCSharp
             }
 
             // ヘッダー行
-            string header = $"{"HOST".PadRight(hostSize)} {"CID".PadRight(6)}";
+            sb.Append($"{"HOST".PadRight(hostSize)} {"CID".PadRight(6)}");
             if (nameSize > 0)
             {
-                header += " " + "NAME".PadRight(nameSize);
+                sb.Append(" " + "NAME".PadRight(nameSize));
             }
-            header += "  SUBS  PENDING  MSGS_TO  MSGS_FROM  BYTES_TO  BYTES_FROM  LANG    VERSION  UPTIME         LAST_ACTIVITY";
-            if (engine.DisplaySubs)
-            {
-                header += "  SUBSCRIPTIONS";
-            }
-            header += $"{Environment.NewLine}";
-            info += header;
+            sb.AppendLine("  SUBS  PENDING  MSGS_TO  MSGS_FROM  BYTES_TO  BYTES_FROM  LANG    VERSION  UPTIME         LAST_ACTIVITY" +
+                          (engine.DisplaySubs ? "  SUBSCRIPTIONS" : ""));
 
+            // 各接続情報
             if (stats.Connz?.Conns != null)
             {
                 foreach (var conn in stats.Connz.Conns)
                 {
                     string hostname = engine.LookupDNS ? DNSLookup(conn.IP) : $"{conn.IP}:{conn.Port}";
-                    string row = $"{hostname.PadRight(hostSize)} {conn.Cid.ToString().PadRight(6)}";
+                    sb.Append(hostname.PadRight(hostSize));
+                    sb.Append(" ");
+                    sb.Append(conn.Cid.ToString().PadRight(6));
                     if (nameSize > 0)
                     {
-                        row += " " + (conn.Name ?? "").PadRight(nameSize);
+                        sb.Append(" " + (conn.Name ?? "").PadRight(nameSize));
                     }
                     if (!engine.ShowRates)
                     {
-                        row += $"  {conn.NumSubs.ToString().PadRight(5)}  {Nsize(engine.DisplayRawBytes, conn.Pending).PadRight(7)}" +
-                               $"  {Nsize(engine.DisplayRawBytes, conn.OutMsgs).PadRight(8)}  {Nsize(engine.DisplayRawBytes, conn.InMsgs).PadRight(9)}" +
-                               $"  {Psize(engine.DisplayRawBytes, conn.OutBytes).PadRight(9)}  {Psize(engine.DisplayRawBytes, conn.InBytes).PadRight(10)}";
+                        sb.Append($"  {conn.NumSubs.ToString().PadRight(5)}  {Nsize(engine.DisplayRawBytes, conn.Pending).PadRight(7)}" +
+                                  $"  {Nsize(engine.DisplayRawBytes, conn.OutMsgs).PadRight(8)}  {Nsize(engine.DisplayRawBytes, conn.InMsgs).PadRight(9)}" +
+                                  $"  {Psize(engine.DisplayRawBytes, conn.OutBytes).PadRight(9)}  {Psize(engine.DisplayRawBytes, conn.InBytes).PadRight(10)}");
                     }
                     else
                     {
-                        // レート表示モード（接続ごとに計算済みのレートを表示）
                         Rates rates = stats.Rates;
                         ConnRates cr = (rates != null && rates.Connections.ContainsKey(conn.Cid))
                             ? rates.Connections[conn.Cid] : new ConnRates();
@@ -213,40 +206,36 @@ namespace NatsTopCSharp
                         string inMsgs = Nsize(engine.DisplayRawBytes, (long)cr.InMsgsRate);
                         string outBytes = Psize(engine.DisplayRawBytes, (long)cr.OutBytesRate);
                         string inBytes = Psize(engine.DisplayRawBytes, (long)cr.InBytesRate);
-                        row += $"  {conn.NumSubs.ToString().PadRight(5)}  {Nsize(engine.DisplayRawBytes, conn.Pending).PadRight(7)}" +
-                               $"  {outMsgs.PadRight(8)}  {inMsgs.PadRight(9)}" +
-                               $"  {outBytes.PadRight(9)}  {inBytes.PadRight(10)}";
+                        sb.Append($"  {conn.NumSubs.ToString().PadRight(5)}  {Nsize(engine.DisplayRawBytes, conn.Pending).PadRight(7)}" +
+                                  $"  {outMsgs.PadRight(8)}  {inMsgs.PadRight(9)}" +
+                                  $"  {outBytes.PadRight(9)}  {inBytes.PadRight(10)}");
                     }
-                    row += $"  {conn.Lang.PadRight(6)}  {conn.Version.PadRight(7)}  {conn.Uptime.PadRight(14)}  {FormatDateTime(conn.LastActivity).PadRight(14)}";
+                    sb.Append($"  {conn.Lang.PadRight(6)}  {conn.Version.PadRight(7)}  {conn.Uptime.PadRight(14)}  {FormatDateTime(conn.LastActivity).PadRight(14)}");
                     if (engine.DisplaySubs)
                     {
                         string subs = conn.Subs != null ? string.Join(", ", conn.Subs) : "";
-                        row += "  " + subs;
+                        sb.Append("  " + subs);
                     }
-                    row += $"{Environment.NewLine}";
-                    info += row;
+                    sb.AppendLine();
                 }
             }
-            return info;
+            return sb.ToString();
         }
 
         /// <summary>
         /// CSV 出力版（出力区切り文字を指定する場合）
         /// </summary>
-        /// <param name="engine"></param>
-        /// <param name="stats"></param>
-        /// <param name="delimiter"></param>
-        /// <returns></returns>
         static string GenerateParagraphCSV(Engine engine, Stats stats, string delimiter)
         {
             Varz varz = stats.Varz;
-            string info =
-                $"NATS server version{delimiter}{varz.Version}{delimiter}(uptime: {varz.Uptime}){delimiter}{stats.Error}{Environment.NewLine}" +
-                $"Server:{Environment.NewLine}" +
-                $"Load{delimiter}CPU{delimiter}{varz.CPU:F1}%{delimiter}Memory{delimiter}{Psize(false, varz.Mem)}{delimiter}Slow Consumers{delimiter}{varz.SlowConsumers}{Environment.NewLine}" +
-                $"In{delimiter}Msgs{delimiter}{Nsize(engine.DisplayRawBytes, varz.InMsgs)}{delimiter}Bytes{delimiter}{Psize(engine.DisplayRawBytes, varz.InBytes)}{delimiter}Msgs/Sec{delimiter}{stats.Rates?.InMsgsRate:F1}{delimiter}Bytes/Sec{delimiter}{Psize(engine.DisplayRawBytes, (long)stats.Rates?.InBytesRate)}{Environment.NewLine}" +
-                $"Out{delimiter}Msgs{delimiter}{Nsize(engine.DisplayRawBytes, varz.OutMsgs)}{delimiter}Bytes{delimiter}{Psize(engine.DisplayRawBytes, varz.OutBytes)}{delimiter}Msgs/Sec{delimiter}{stats.Rates?.OutMsgsRate:F1}{delimiter}Bytes/Sec{delimiter}{Psize(engine.DisplayRawBytes, (long)stats.Rates?.OutBytesRate)}{Environment.NewLine}{Environment.NewLine}" +
-                $"Connections Polled{delimiter}{stats.Connz.NumConns}{Environment.NewLine}";
+            var sb = new StringBuilder();
+            sb.AppendLine($"NATS server version{delimiter}{varz.Version}{delimiter}(uptime: {varz.Uptime}){delimiter}{stats.Error}");
+            sb.AppendLine("Server:");
+            sb.AppendLine($"Load{delimiter}CPU{delimiter}{varz.CPU:F1}%{delimiter}Memory{delimiter}{Psize(false, varz.Mem)}{delimiter}Slow Consumers{delimiter}{varz.SlowConsumers}");
+            sb.AppendLine($"In{delimiter}Msgs{delimiter}{Nsize(engine.DisplayRawBytes, varz.InMsgs)}{delimiter}Bytes{delimiter}{Psize(engine.DisplayRawBytes, varz.InBytes)}{delimiter}Msgs/Sec{delimiter}{stats.Rates?.InMsgsRate:F1}{delimiter}Bytes/Sec{delimiter}{Psize(engine.DisplayRawBytes, (long)stats.Rates?.InBytesRate)}");
+            sb.AppendLine($"Out{delimiter}Msgs{delimiter}{Nsize(engine.DisplayRawBytes, varz.OutMsgs)}{delimiter}Bytes{delimiter}{Psize(engine.DisplayRawBytes, varz.OutBytes)}{delimiter}Msgs/Sec{delimiter}{stats.Rates?.OutMsgsRate:F1}{delimiter}Bytes/Sec{delimiter}{Psize(engine.DisplayRawBytes, (long)stats.Rates?.OutBytesRate)}");
+            sb.AppendLine();
+            sb.AppendLine($"Connections Polled{delimiter}{stats.Connz.NumConns}");
 
             List<string> headers = new()
             {
@@ -257,7 +246,7 @@ namespace NatsTopCSharp
             {
                 headers.Add("SUBSCRIPTIONS");
             }
-            info += string.Join(delimiter, headers) + $"{Environment.NewLine}";
+            sb.AppendLine(string.Join(delimiter, headers));
 
             foreach (var conn in stats.Connz.Conns)
             {
@@ -297,9 +286,9 @@ namespace NatsTopCSharp
                     string subs = conn.Subs != null ? string.Join(", ", conn.Subs) : "";
                     row.Add(subs);
                 }
-                info += string.Join(delimiter, row) + $"{Environment.NewLine}";
+                sb.AppendLine(string.Join(delimiter, row));
             }
-            return info;
+            return sb.ToString();
         }
 
         /// <summary>
@@ -308,8 +297,8 @@ namespace NatsTopCSharp
         static Dictionary<string, string> dnsCache = new();
         static string DNSLookup(string ip)
         {
-            if (dnsCache.ContainsKey(ip))
-                return dnsCache[ip];
+            if (dnsCache.TryGetValue(ip, out string? value))
+                return value;
             try
             {
                 var entry = Dns.GetHostEntry(ip);
@@ -327,9 +316,6 @@ namespace NatsTopCSharp
         /// <summary>
         /// バイトサイズを人間に読みやすい文字列に変換
         /// </summary>
-        /// <param name="displayRawValue"></param>
-        /// <param name="s"></param>
-        /// <returns></returns>
         static string Psize(bool displayRawValue, long s)
         {
             double size = s;
@@ -349,9 +335,6 @@ namespace NatsTopCSharp
         /// <summary>
         /// 数値を読みやすい形式に変換（K, M, B, T 単位）
         /// </summary>
-        /// <param name="displayRawValue"></param>
-        /// <param name="s"></param>
-        /// <returns></returns>
         static string Nsize(bool displayRawValue, long s)
         {
             double size = s;
@@ -374,26 +357,18 @@ namespace NatsTopCSharp
         /// <summary>
         /// 日付フォーマットを変換
         /// </summary>
-        /// <param name="isoDateTime"></param>
-        /// <returns></returns>
         static string FormatDateTime(string isoDateTime)
         {
             try
             {
-                // DateTimeOffsetをパース
                 DateTimeOffset dto = DateTimeOffset.Parse(isoDateTime);
-
-                // DateTimeに変換（ローカルタイムゾーンを考慮）
                 DateTime dt = dto.DateTime;
-
-                // yyyy/MM/dd HH:mm 形式でフォーマット
                 return dt.ToString("yyyy/MM/dd HH:mm");
             }
             catch
             {
                 return isoDateTime;
             }
-
         }
 
         #endregion
@@ -524,6 +499,9 @@ namespace NatsTopCSharp
         public Dictionary<ulong, ConnInfo> LastConnz { get; set; } = new();
         public HttpClient HttpClient { get; set; }
 
+        // JSON シリアライザオプションをキャッシュ（任意）
+        private static readonly JsonSerializerOptions jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+
         public Engine(string host, int port, int conns, int delay)
         {
             Host = host;
@@ -576,12 +554,12 @@ namespace NatsTopCSharp
             string body = await response.Content.ReadAsStringAsync();
             if (path == "/varz")
             {
-                Varz varz = JsonSerializer.Deserialize<Varz>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                Varz varz = JsonSerializer.Deserialize<Varz>(body, jsonOptions);
                 return varz;
             }
             else if (path.StartsWith("/connz"))
             {
-                Connz connz = JsonSerializer.Deserialize<Connz>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                Connz connz = JsonSerializer.Deserialize<Connz>(body, jsonOptions);
                 return connz;
             }
             else
@@ -598,8 +576,12 @@ namespace NatsTopCSharp
             Stats stats = new();
             try
             {
-                stats.Varz = (Varz)await Request("/varz");
-                stats.Connz = (Connz)await Request("/connz");
+                // /varz と /connz の取得を並列実行
+                Task<object> varzTask = Request("/varz");
+                Task<object> connzTask = Request("/connz");
+                await Task.WhenAll(varzTask, connzTask);
+                stats.Varz = (Varz)varzTask.Result;
+                stats.Connz = (Connz)connzTask.Result;
             }
             catch (Exception ex)
             {
@@ -607,7 +589,7 @@ namespace NatsTopCSharp
                 return stats;
             }
 
-            // 前回統計がある場合は、経過時間から各種レートを計算する
+            // 前回統計がある場合、経過時間から各種レートを計算
             if (LastStats != null)
             {
                 TimeSpan tdelta = stats.Varz.Now - LastStats.Varz.Now;
@@ -676,9 +658,6 @@ namespace NatsTopCSharp
 
     #region データクラス
 
-    /// <summary>
-    /// varz エンドポイントの情報
-    /// </summary>
     public class Varz
     {
         [JsonPropertyName("cpu")]
@@ -718,21 +697,15 @@ namespace NatsTopCSharp
         public DateTime Now { get; set; }
     }
 
-    /// <summary>
-    /// connz エンドポイントの情報
-    /// </summary>
     public class Connz
     {
         [JsonPropertyName("num_connections")]
         public int NumConns { get; set; }
 
         [JsonPropertyName("connections")]
-        public List<ConnInfo> Conns { get; set; } = new List<ConnInfo>();
+        public List<ConnInfo> Conns { get; set; } = new();
     }
 
-    /// <summary>
-    /// 各接続の情報
-    /// </summary>
     public class ConnInfo
     {
         [JsonPropertyName("cid")]
@@ -781,9 +754,6 @@ namespace NatsTopCSharp
         public List<string> Subs { get; set; }
     }
 
-    /// <summary>
-    /// 統計情報全体
-    /// </summary>
     public class Stats
     {
         [JsonPropertyName("varz")]
@@ -799,9 +769,6 @@ namespace NatsTopCSharp
         public string Error { get; set; } = "";
     }
 
-    /// <summary>
-    /// 全体のレート情報
-    /// </summary>
     public class Rates
     {
         [JsonPropertyName("in_msgs_rate")]
@@ -817,12 +784,9 @@ namespace NatsTopCSharp
         public double OutBytesRate { get; set; }
 
         [JsonPropertyName("connections")]
-        public Dictionary<ulong, ConnRates> Connections { get; set; } = new Dictionary<ulong, ConnRates>();
+        public Dictionary<ulong, ConnRates> Connections { get; set; } = new();
     }
 
-    /// <summary>
-    /// 各接続ごとのレート情報
-    /// </summary>
     public class ConnRates
     {
         [JsonPropertyName("in_msgs_rate")]
