@@ -78,12 +78,16 @@ namespace NatsTopCSharp
             CancellationTokenSource cts = new();
             Task monitoringTask = engine.MonitorStats(cts.Token);
 
+            // カーソルを非表示にする
+            Console.CursorVisible = false;
+
             // メインループ：一定間隔で最新統計情報を表示＆キー入力処理
             int refreshCount = 0;
             while (!cts.IsCancellationRequested)
             {
                 if (engine.LastStats != null)
                 {
+                    Console.SetCursorPosition(0, 0); // カーソルを左上に移動
                     Console.Clear();
                     string text = GenerateParagraphPlainText(engine, engine.LastStats);
                     Console.WriteLine(text);
